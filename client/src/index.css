@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Simple brand styling */
+:root { --brand: #0ea5e9; /* sky-500 */ }
+
+.btn { @apply inline-flex items-center justify-center px-4 py-2 rounded-xl shadow-sm font-medium transition; }
+.btn-primary { @apply bg-sky-500 text-white hover:bg-sky-600; }
+.btn-outline { @apply border border-sky-500 text-sky-600 hover:bg-sky-50; }
+.card { @apply bg-white rounded-2xl shadow p-6; }
+.input { @apply w-full rounded-xl border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-sky-400; }
+.label { @apply text-sm font-semibold text-gray-700; }
+.hr { @apply border-t mt-4 mb-2; }
+.h1 { @apply text-2xl md:text-3xl font-bold text-gray-800; }
+.h2 { @apply text-xl font-semibold text-gray-800 underline underline-offset-4 decoration-sky-400; }
+.navbar { @apply sticky top-0 z-10 bg-white/80 backdrop-blur border-b; }
+.table { @apply w-full text-sm; }
+.th, .td { @apply border-b py-2 px-2 text-gray-800; }
+.badge { @apply inline-block px-2 py-1 rounded-lg text-xs bg-sky-100 text-sky-700; }
+
+/* Hide the up/down arrows on number inputs that opt in with .no-spin */
+.no-spin::-webkit-outer-spin-button,
+.no-spin::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.no-spin {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
