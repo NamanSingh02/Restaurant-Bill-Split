@@ -1,4 +1,3 @@
-// server/routes/food.js
 import express from 'express';
 import Room from '../models/Room.js';
 import FoodItem from '../models/FoodItem.js';
@@ -20,18 +19,14 @@ router.get('/:roomCode', async (req, res) => {
   }
 });
 
-// Add a food item (requires auth)
+// Add a food item
 router.post('/:roomCode', auth, async (req, res) => {
   try {
-    // Socket.IO instance was attached in server.js via app.set('io', io)
     const io = req.app.get('io');
-
     const room = await Room.findOne({ code: req.params.roomCode });
     if (!room) return res.status(404).json({ message: 'Room not found or expired' });
 
     const { name, price, groupNumbers, percentages } = req.body;
-
-    // Basic validation
     if (!name || price == null || !Array.isArray(groupNumbers) || !Array.isArray(percentages)) {
       return res.status(400).json({ message: 'Missing fields' });
     }
@@ -39,13 +34,11 @@ router.post('/:roomCode', auth, async (req, res) => {
       return res.status(400).json({ message: 'Groups and percentages must align' });
     }
 
-    // Percentages must sum to 100 (allow rounding)
     const sum = percentages.reduce((a, b) => a + Number(b), 0);
     if (Math.round(sum) !== 100) {
       return res.status(400).json({ message: 'Percentages must sum to 100' });
     }
 
-    // Validate groups and derive names in same order
     const groupMap = new Map(room.groups.map(g => [g.number, g.name]));
     const names = [];
     for (const n of groupNumbers) {
@@ -54,7 +47,6 @@ router.post('/:roomCode', auth, async (req, res) => {
       names.push(nm);
     }
 
-    // Create item (share expiry with room for TTL cleanup)
     const item = await FoodItem.create({
       roomCode: room.code,
       name: String(name).trim(),
@@ -66,8 +58,12 @@ router.post('/:roomCode', auth, async (req, res) => {
       expiresAt: room.expiresAt
     });
 
-    // Notify all clients in this room (safe-guard if io missing)
-    if (io) io.to(room.code).emit('foodItemAdded', item);
+    // IMPORTANT: clear shared bill-total input because the bill changed
+    room.enteredBillTotal = null;
+    await room.save();
+
+    io.to(room.code).emit('foodItemAdded', item);
+    io.to(room.code).emit('enteredBillTotalCleared');
 
     return res.status(201).json({ item });
   } catch (e) {
@@ -76,7 +72,35 @@ router.post('/:roomCode', auth, async (req, res) => {
   }
 });
 
-// Calculate totals per group
+// Delete a food item
+router.delete('/:roomCode/:itemId', auth, async (req, res) => {
+  try {
+    const io = req.app.get('io');
+    const { roomCode, itemId } = req.params;
+
+    const room = await Room.findOne({ code: roomCode });
+    if (!room) return res.status(404).json({ message: 'Room not found or expired' });
+
+    const item = await FoodItem.findOne({ _id: itemId, roomCode: room.code });
+    if (!item) return res.status(404).json({ message: 'Food item not found' });
+
+    await FoodItem.deleteOne({ _id: itemId });
+
+    // Also clear shared bill-total input because the bill changed
+    room.enteredBillTotal = null;
+    await room.save();
+
+    io.to(room.code).emit('foodItemDeleted', { itemId });
+    io.to(room.code).emit('enteredBillTotalCleared');
+
+    return res.json({ message: 'Food item deleted', itemId });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Calculate totals per group (with optional proportional extra charges)
 router.get('/:roomCode/calc', async (req, res) => {
   try {
     const room = await Room.findOne({ code: req.params.roomCode });
@@ -93,13 +117,43 @@ router.get('/:roomCode/calc', async (req, res) => {
       });
     }
 
-    const result = room.groups.map(g => ({
-      groupNumber: g.number,
-      groupName: g.name,
-      bill: Number((totals.get(g.number) || 0).toFixed(2))
-    }));
+    const baseTotal = Number(
+      room.groups.reduce((sum, g) => sum + (totals.get(g.number) || 0), 0).toFixed(2)
+    );
 
-    return res.json({ bills: result });
+    let ratio = 1;
+    const enteredBillTotal = room.enteredBillTotal;
+
+    if (enteredBillTotal !== null && enteredBillTotal !== undefined) {
+      if (Number(enteredBillTotal) < baseTotal) {
+        return res.status(400).json({
+          message: 'Entered total amount cannot be less than the calculated total bill'
+        });
+      }
+
+      if (baseTotal > 0) {
+        ratio = Number((Number(enteredBillTotal) / baseTotal).toFixed(6));
+      }
+    }
+
+    const result = room.groups.map(g => {
+      const baseBill = Number((totals.get(g.number) || 0).toFixed(2));
+      const finalBill = Number((baseBill * ratio).toFixed(2));
+
+      return {
+        groupNumber: g.number,
+        groupName: g.name,
+        baseBill,
+        bill: finalBill
+      };
+    });
+
+    return res.json({
+      bills: result,
+      ratio,
+      baseTotal,
+      enteredBillTotal
+    });
   } catch (e) {
     console.error(e);
     return res.status(500).json({ message: 'Server error' });

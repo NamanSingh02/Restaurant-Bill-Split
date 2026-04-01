@@ -1,15 +1,22 @@
 export function saveSession({ token, user }) {
-localStorage.setItem('token', token);
-localStorage.setItem('user', JSON.stringify(user));
+  sessionStorage.setItem('token', token);
+  sessionStorage.setItem('user', JSON.stringify(user));
 }
+
 export function clearSession() {
-localStorage.removeItem('token');
-localStorage.removeItem('user');
+  sessionStorage.removeItem('token');
+  sessionStorage.removeItem('user');
+
+  // optional cleanup of old data if localStorage was used earlier
+  localStorage.removeItem('token');
+  localStorage.removeItem('user');
 }
+
 export function getToken() {
-return localStorage.getItem('token');
+  return sessionStorage.getItem('token');
 }
+
 export function getUser() {
-const raw = localStorage.getItem('user');
-return raw ? JSON.parse(raw) : null;
+  const raw = sessionStorage.getItem('user');
+  return raw ? JSON.parse(raw) : null;
 }
